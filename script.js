@@ -30,6 +30,7 @@ class NetworkDiagram {
         this.historyIndex = -1;
         this.maxHistorySize = 50;
         
+<<<<<<< HEAD
         // Добавляем состояние для перемещения рабочей области
         this.isPanning = false;
         this.panStartX = 0;
@@ -39,6 +40,8 @@ class NetworkDiagram {
     this.originalPanX = 0;
     this.originalPanY = 0;
         
+=======
+>>>>>>> 38752af9f966d5e5c35a4d8a9938a4de44fb7ab6
         this.init();
     }
 
@@ -104,6 +107,7 @@ class NetworkDiagram {
             e.stopPropagation();
             this.startSelection(e);
         }
+<<<<<<< HEAD
 
         // Средняя кнопка или колесо — начало панорамирования (drag to pan)
         if (e.button === 1) {
@@ -116,6 +120,8 @@ class NetworkDiagram {
             this.originalPanY = this.panY;
             document.body.style.cursor = 'grabbing';
         }
+=======
+>>>>>>> 38752af9f966d5e5c35a4d8a9938a4de44fb7ab6
     }
 
     handleWorkspaceContextMenu(e) {
@@ -314,35 +320,45 @@ class NetworkDiagram {
     }
 
     zoomIn() {
+<<<<<<< HEAD
         // Zoom around center of viewport
         const workspace = document.getElementById('workspaceInner');
         const rect = workspace.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
         this._zoomAnchor = { clientX: centerX, clientY: centerY };
+=======
+>>>>>>> 38752af9f966d5e5c35a4d8a9938a4de44fb7ab6
         this.setScale(this.scale + this.scaleStep);
     }
 
     zoomOut() {
+<<<<<<< HEAD
         const workspace = document.getElementById('workspaceInner');
         const rect = workspace.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
         this._zoomAnchor = { clientX: centerX, clientY: centerY };
+=======
+>>>>>>> 38752af9f966d5e5c35a4d8a9938a4de44fb7ab6
         this.setScale(this.scale - this.scaleStep);
     }
 
     zoomReset() {
+<<<<<<< HEAD
         const workspace = document.getElementById('workspaceInner');
         const rect = workspace.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
         this._zoomAnchor = { clientX: centerX, clientY: centerY };
+=======
+>>>>>>> 38752af9f966d5e5c35a4d8a9938a4de44fb7ab6
         this.setScale(1);
     }
 
     setScale(newScale) {
         newScale = Math.max(this.minScale, Math.min(this.maxScale, newScale));
+<<<<<<< HEAD
         if (newScale === this.scale) return;
 
         // Изменяем масштаб, сохраняя текущую точку (по умолчанию левый верхний угол)
@@ -392,6 +408,21 @@ class NetworkDiagram {
     applyScale() {
         // Этот метод больше не нужен, так как масштабирование происходит через transform
         // Оставляем только обновление сетки
+=======
+        
+        if (newScale !== this.scale) {
+            this.scale = newScale;
+            this.applyScale();
+            this.updateZoomDisplay();
+            console.log('Масштаб изменен:', this.scale);
+        }
+    }
+
+    applyScale() {
+        const workspaceInner = document.getElementById('workspaceInner');
+        workspaceInner.style.transform = `scale(${this.scale})`;
+        
+>>>>>>> 38752af9f966d5e5c35a4d8a9938a4de44fb7ab6
         const grid = document.getElementById('grid');
         const gridSize = 20 * this.scale;
         grid.style.backgroundSize = `${gridSize}px ${gridSize}px`;
@@ -405,12 +436,18 @@ class NetworkDiagram {
     handleWheel(e) {
         if (e.ctrlKey) {
             e.preventDefault();
+<<<<<<< HEAD
             // Устанавливаем якорь зума — координаты курсора — и вызываем setScale
             // (setScale сам посчитает новые panX/panY)
             this._zoomAnchor = { clientX: e.clientX, clientY: e.clientY };
             const delta = e.deltaY > 0 ? -this.scaleStep : this.scaleStep;
             const newScale = Math.max(this.minScale, Math.min(this.maxScale, this.scale + delta));
             this.setScale(newScale);
+=======
+            
+            const delta = e.deltaY > 0 ? -this.scaleStep : this.scaleStep;
+            this.setScale(this.scale + delta);
+>>>>>>> 38752af9f966d5e5c35a4d8a9938a4de44fb7ab6
         }
     }
 
@@ -814,6 +851,7 @@ class NetworkDiagram {
     }
 
     handleMouseMove(e) {
+<<<<<<< HEAD
         if (this.isPanning) {
             const deltaX = e.clientX - this.panStartX;
             const deltaY = e.clientY - this.panStartY;
@@ -828,6 +866,8 @@ class NetworkDiagram {
             return;
         }
         
+=======
+>>>>>>> 38752af9f966d5e5c35a4d8a9938a4de44fb7ab6
         if (this.isSelecting) {
             const workspace = document.querySelector('.workspace');
             const rect = workspace.getBoundingClientRect();
@@ -906,11 +946,14 @@ class NetworkDiagram {
     }
 
     handleMouseUp(e) {
+<<<<<<< HEAD
         if (this.isPanning) {
             this.isPanning = false;
             document.body.style.cursor = '';
         }
         
+=======
+>>>>>>> 38752af9f966d5e5c35a4d8a9938a4de44fb7ab6
         if (this.isSelecting) {
             this.finishSelection();
         }
