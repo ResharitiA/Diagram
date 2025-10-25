@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сетевой конструктор</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Панель доступных объектов -->
+        <div class="objects-panel">
+            <h3>Доступные объекты</h3>
+            <div class="object-item" draggable="true" data-type="router">
+                <div class="object-icon router">🔄</div>
+                <span>Маршрутизатор</span>
+            </div>
+            <div class="object-item" draggable="true" data-type="switch">
+                <div class="object-icon switch">🔀</div>
+                <span>Коммутатор</span>
+            </div>
+            <div class="object-item" draggable="true" data-type="server">
+                <div class="object-icon server">🖥️</div>
+                <span>Сервер</span>
+            </div>
+            <div class="object-item" draggable="true" data-type="pc">
+                <div class="object-icon pc">💻</div>
+                <span>Компьютер</span>
+            </div>
+            <div class="object-item" draggable="true" data-type="firewall">
+                <div class="object-icon firewall">🔥</div>
+                <span>Фаервол</span>
+            </div>
+            
+            <h3 style="margin-top: 20px;">Типы кабелей</h3>
+            <div class="cable-item" data-type="ethernet">
+                <div class="cable-icon ethernet">🔗</div>
+                <span>Ethernet</span>
+            </div>
+            <div class="cable-item" data-type="fiber">
+                <div class="cable-icon fiber">🔆</div>
+                <span>Оптоволокно</span>
+            </div>
+            <div class="cable-item" data-type="coaxial">
+                <div class="cable-icon coaxial">⛓️</div>
+                <span>Коаксиальный</span>
+            </div>
+            <div class="cable-item" data-type="serial">
+                <div class="cable-icon serial">🔌</div>
+                <span>Последовательный</span>
+            </div>
+        </div>
+
+        <!-- Основное рабочее поле -->
+        <div class="workspace">
+            <div class="workspace-inner" id="workspaceInner">
+                <div class="grid" id="grid"></div>
+                <div class="objects-container" id="objectsContainer"></div>
+                <svg class="connections-layer" id="connectionsLayer"></svg>
+            </div>
+            
+            <!-- Элементы управления масштабом -->
+            <div class="zoom-controls">
+                <button class="zoom-btn" id="zoomOut" title="Уменьшить (Ctrl + -)">-</button>
+                <div class="zoom-level" id="zoomLevel">100%</div>
+                <button class="zoom-btn" id="zoomIn" title="Увеличить (Ctrl + +)">+</button>
+                <button class="zoom-btn" id="zoomReset" title="Сбросить масштаб (Ctrl + 0)">100%</button>
+            </div>
+        </div>
+
+        <!-- Панель размещенных объектов -->
+        <div class="placed-objects">
+            <h3>Размещенные объекты</h3>
+            <div id="placedObjectsList"></div>
+            
+            <h3 style="margin-top: 20px;">Соединения</h3>
+            <div id="connectionsList"></div>
+        </div>
+
+        <!-- Панель управления -->
+        <div class="control-panel">
+            <h3>Управление</h3>
+            <button id="exportBtn" class="control-btn">
+                💾 Экспорт в JSON
+            </button>
+            <div class="import-group">
+                <input type="file" id="importFile" accept=".json" style="display: none;">
+                <button id="importBtn" class="control-btn">
+                    📁 Импорт из JSON
+                </button>
+            </div>
+            <button id="undoBtn" class="control-btn" title="Ctrl+Z">
+                ↩️ Отменить
+            </button>
+            <button id="redoBtn" class="control-btn" title="Ctrl+Y">
+                ↪️ Повторить
+            </button>
+            <button id="clearBtn" class="control-btn clear">
+                🗑️ Очистить поле
+            </button>
+            <div class="current-cable">
+                <span>Текущий кабель: </span>
+                <span id="currentCableType">Не выбран</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
