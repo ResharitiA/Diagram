@@ -1,0 +1,433 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f5f5;
+    overflow: hidden;
+}
+
+.container {
+    display: grid;
+    grid-template-columns: 250px 1fr 250px;
+    grid-template-rows: 1fr auto;
+    height: 100vh;
+    gap: 1px;
+}
+
+/* Панель доступных объектов */
+.objects-panel {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    background: white;
+    border-right: 1px solid #ddd;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+.objects-panel h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.object-item {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    cursor: grab;
+    transition: all 0.2s;
+}
+
+.object-item:hover {
+    background: #e9ecef;
+    transform: translateY(-1px);
+}
+
+.object-icon {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 10px;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+.router { background: #e3f2fd; }
+.switch { background: #f3e5f5; }
+.server { background: #e8f5e8; }
+.pc { background: #fff3e0; }
+.firewall { background: #ffebee; }
+
+/* Стили для кабелей */
+.cable-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    margin-bottom: 6px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.cable-item:hover {
+    background: #e9ecef;
+    transform: translateY(-1px);
+}
+
+.cable-item.selected {
+    background: #007bff;
+    color: white;
+    border-color: #0056b3;
+}
+
+.cable-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.ethernet { background: #d4edda; color: #155724; }
+.fiber { background: #e2e3e5; color: #383d41; }
+.coaxial { background: #fff3cd; color: #856404; }
+.serial { background: #d1ecf1; color: #0c5460; }
+
+.cable-item.selected .cable-icon {
+    background: rgba(255,255,255,0.3);
+}
+
+/* Рабочее поле */
+.workspace {
+    grid-column: 2;
+    grid-row: 1;
+    background: white;
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+}
+
+.workspace-inner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    transform-origin: 0 0;
+    transition: transform 0.1s ease;
+}
+
+.grid {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+        linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+.objects-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.connections-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* Размещенные объекты на поле */
+.placed-object {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    background: white;
+    border: 2px solid #007bff;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: move;
+    user-select: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    transition: all 0.15s ease;
+    z-index: 20;
+}
+
+.placed-object:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    transform: scale(1.05);
+}
+
+.placed-object.selected {
+    border-color: #ff6b6b;
+    border-width: 3px;
+    background: #fff9f9;
+}
+
+.placed-object.multi-selected {
+    border-color: #ff6b6b;
+    border-width: 3px;
+    background: #fff9f9;
+}
+
+.placed-object:active {
+    cursor: grabbing;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+
+.placed-object .icon {
+    font-size: 24px;
+    margin-bottom: 5px;
+}
+
+.placed-object .label {
+    font-size: 10px;
+    text-align: center;
+    font-weight: 500;
+}
+
+/* Точки соединения */
+.connection-point {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: #28a745;
+    border: 2px solid white;
+    border-radius: 50%;
+    cursor: crosshair;
+    z-index: 30;
+    transition: all 0.2s;
+}
+
+.placed-object:hover .connection-point {
+    background: #20c997;
+    transform: scale(1.2);
+}
+
+/* Стили для соединений */
+.connection {
+    stroke-width: 3;
+    fill: none;
+}
+
+.connection.ethernet {
+    stroke: #28a745;
+    stroke-dasharray: 5, 5;
+}
+
+.connection.fiber {
+    stroke: #6f42c1;
+    stroke-dasharray: 10, 5;
+}
+
+.connection.coaxial {
+    stroke: #fd7e14;
+    stroke-dasharray: 2, 2;
+}
+
+.connection.serial {
+    stroke: #17a2b8;
+    stroke-dasharray: 15, 5, 5, 5;
+}
+
+.connection.highlight {
+    stroke-width: 4;
+    filter: drop-shadow(0 0 3px rgba(0,123,255,0.5));
+}
+
+/* Стили для выделения области */
+.selection-rect {
+    position: absolute;
+    border: 2px dashed #007bff;
+    background: rgba(0, 123, 255, 0.1);
+    pointer-events: none;
+    z-index: 50;
+}
+
+/* Панель размещенных объектов */
+.placed-objects {
+    grid-column: 3;
+    grid-row: 1 / -1;
+    background: white;
+    border-left: 1px solid #ddd;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+.placed-objects h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.placed-object-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    margin-bottom: 5px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.placed-object-item .icon {
+    margin-right: 8px;
+    font-size: 14px;
+}
+
+.connection-item {
+    display: flex;
+    align-items: center;
+    padding: 6px;
+    margin-bottom: 4px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.connection-item .cable-icon {
+    margin-right: 6px;
+    font-size: 12px;
+}
+
+/* Панель управления */
+.control-panel {
+    grid-column: 2;
+    grid-row: 2;
+    background: white;
+    border-top: 1px solid #ddd;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.control-panel h3 {
+    margin-right: 15px;
+    color: #333;
+    white-space: nowrap;
+}
+
+.control-btn {
+    padding: 10px 15px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.control-btn:hover {
+    background: #0056b3;
+    transform: translateY(-1px);
+}
+
+.control-btn.clear {
+    background: #dc3545;
+}
+
+.control-btn.clear:hover {
+    background: #c82333;
+}
+
+.import-group {
+    position: relative;
+}
+
+.current-cable {
+    margin-left: auto;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+/* Стили для масштабирования */
+.zoom-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 5px;
+    display: flex;
+    gap: 5px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    z-index: 1000;
+}
+
+.zoom-btn {
+    width: 30px;
+    height: 30px;
+    border: none;
+    background: #f8f9fa;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: all 0.2s;
+}
+
+.zoom-btn:hover {
+    background: #007bff;
+    color: white;
+}
+
+.zoom-level {
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 500;
+    min-width: 60px;
+    justify-content: center;
+}
+
+/* Стили для кнопок отмены/повтора */
+.control-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.control-btn:disabled:hover {
+    background: #6c757d;
+    transform: none;
+}
