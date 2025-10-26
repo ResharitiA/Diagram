@@ -12,20 +12,96 @@ const NetworkDiagram = () => {
   // Пан и зум (scale в пикселях и пан в экранных пикселях)
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  // Для редактирования имени
+  const [editingId, setEditingId] = useState(null);
+  const [editingValue, setEditingValue] = useState('');
+  // Для выделения рамкой
+  const [selectionRect, setSelectionRect] = useState(null);
+  const isSelectingRef = useRef(false);
+  const selectionStartRef = useRef({ x: 0, y: 0 });
+  const shiftPressedRef = useRef(false);
+  // Для валидации и свойств
+  const [validationMessages, setValidationMessages] = useState([]);
+  const [selectedObject, setSelectedObject] = useState(null);
 
   // Правильные константы для объектов
   const OBJECT_TYPES = {
-    server: { label: 'Сервер', icon: '🖥️', color: '#e8f5e8' },
-    firewall: { label: 'Фаервол', icon: '🔥', color: '#ffebee' },
-    loadbalancer: { label: 'Балансировщик', icon: '⚖️', color: '#fff3cd' },
-    service: { label: 'Сервис', icon: '⚙️', color: '#cfe2ff' },
-    container: { label: 'Контейнер', icon: '📦', color: '#d1e7dd' },
-    network: { label: 'Сеть', icon: '🌐', color: '#f8d7da' }
+    server: { 
+      label: 'Сервер', 
+      icon: '🖥️', 
+      color: '#e8f5e8',
+      properties: {
+        ip: { label: 'IP адрес', value: '192.168.1.1', editable: true },
+        os: { label: 'ОС', value: 'Linux', editable: true },
+        cpu: { label: 'Процессор', value: '4 cores', editable: true },
+        ram: { label: 'Память', value: '8GB', editable: true }
+      }
+    },
+    firewall: { 
+      label: 'Фаервол', 
+      icon: '🔥', 
+      color: '#ffebee',
+      properties: {
+        rules: { label: 'Правила', value: 'Default deny', editable: true },
+        zones: { label: 'Зоны', value: 'DMZ, Internal', editable: true },
+        throughput: { label: 'Пропускная способность', value: '1Gbps', editable: true }
+      }
+    },
+    loadbalancer: { 
+      label: 'Балансировщик', 
+      icon: '⚖️', 
+      color: '#fff3cd',
+      properties: {
+        algorithm: { label: 'Алгоритм', value: 'Round Robin', editable: true },
+        healthCheck: { label: 'Проверка здоровья', value: '/health', editable: true },
+        ssl: { label: 'SSL', value: 'Enabled', editable: true }
+      }
+    },
+    service: { 
+      label: 'Сервис', 
+      icon: '⚙️', 
+      color: '#cfe2ff',
+      properties: {
+        port: { label: 'Порт', value: '8080', editable: true },
+        protocol: { label: 'Протокол', value: 'HTTP', editable: true },
+        version: { label: 'Версия', value: '1.0', editable: true }
+      }
+    },
+    container: { 
+      label: 'Контейнер', 
+      icon: '📦', 
+      color: '#d1e7dd',
+      properties: {
+        image: { label: 'Образ', value: 'nginx:latest', editable: true },
+        ports: { label: 'Порты', value: '80:80', editable: true },
+        environment: { label: 'Окружение', value: 'production', editable: true }
+      }
+    },
+    network: { 
+      label: 'Сеть', 
+      icon: '🌐', 
+      color: '#f8d7da',
+      properties: {
+        subnet: { label: 'Подсеть', value: '192.168.0.0/24', editable: true },
+        gateway: { label: 'Шлюз', value: '192.168.0.1', editable: true },
+        dns: { label: 'DNS', value: '8.8.8.8', editable: true }
+      }
+    }
   };
 
   // Правильные константы для кабелей
   const CABLE_TYPES = {
-    logical: { label: 'Логическая связь', icon: '➡️', color: '#6c757d' }
+    logical: { label: 'Соединение', icon: '➡️', color: '#6c757d' }
+  };
+
+  // Правила валидации соединений
+  const VALID_CONNECTIONS = {
+    server: ['container', 'network', 'firewall', 'loadbalancer'],
+    firewall: ['network', 'server', 'firewall'], // Разрешаем firewall+firewall
+    loadbalancer: ['service', 'container', 'network'],
+    service: ['container', 'network', 'loadbalancer'],
+    container: ['network', 'server', 'service', 'loadbalancer'],
+    network: ['server', 'container', 'firewall', 'loadbalancer', 'network']
   };
 
   // Рефы
@@ -36,9 +112,174 @@ const NetworkDiagram = () => {
   const dragStartRef = useRef(null);
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ startX: 0, startY: 0, origPan: { x: 0, y: 0 } });
+  // Буфер обмена и undo/redo
+  const clipboardRef = useRef([]);
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+
+  // Добавление сообщения валидации
+  const addValidationMessage = useCallback((message, type = 'error') => {
+    const id = Date.now() + Math.random();
+    setValidationMessages(prev => [...prev, { id, message, type }]);
+  }, []);
+
+  // Удаление сообщения валидации
+  const removeValidationMessage = useCallback((id) => {
+    setValidationMessages(prev => prev.filter(msg => msg.id !== id));
+  }, []);
+
+  // Валидация соединения
+  const validateConnection = (fromType, toType) => {
+    const validTargets = VALID_CONNECTIONS[fromType];
+    if (!validTargets) {
+      return { isValid: false, message: `Неизвестный тип источника: ${fromType}` };
+    }
+    
+    // Специальная проверка для firewall+firewall
+    if (fromType === 'firewall' && toType === 'firewall') {
+      return { 
+        isValid: true, 
+        warning: 'Соединение Фаервол-Фаервол не рекомендуется в большинстве сценариев' 
+      };
+    }
+    
+    if (!validTargets.includes(toType)) {
+      const fromLabel = OBJECT_TYPES[fromType]?.label || fromType;
+      const toLabel = OBJECT_TYPES[toType]?.label || toType;
+      return { 
+        isValid: false, 
+        message: `Недопустимое соединение: ${fromLabel} не может быть подключен к ${toLabel}` 
+      };
+    }
+    
+    return { isValid: true };
+  };
+
+  // Проверка топологии
+  const validateTopology = () => {
+    const errors = [];
+    const warnings = [];
+    
+    // Проверяем контейнеры - должны быть подключены к сети
+    objects.forEach(obj => {
+      if (obj.type === 'container') {
+        const hasNetworkConnection = connections.some(conn => 
+          (conn.from === obj.id || conn.to === obj.id) && 
+          objects.find(o => o.id === (conn.from === obj.id ? conn.to : conn.from))?.type === 'network'
+        );
+        
+        if (!hasNetworkConnection) {
+          errors.push(`Контейнер "${obj.name}" не подключен к сети`);
+        }
+      }
+    });
+
+    // Проверяем сервисы - должны быть подключены к контейнерам
+    objects.forEach(obj => {
+      if (obj.type === 'service') {
+        const hasContainerConnection = connections.some(conn => 
+          (conn.from === obj.id || conn.to === obj.id) && 
+          objects.find(o => o.id === (conn.from === obj.id ? conn.to : conn.from))?.type === 'container'
+        );
+        
+        if (!hasContainerConnection) {
+          errors.push(`Сервис "${obj.name}" не подключен к контейнеру`);
+        }
+      }
+    });
+
+    // Проверяем соединения firewall+firewall
+    connections.forEach(conn => {
+      const fromObj = objects.find(obj => obj.id === conn.from);
+      const toObj = objects.find(obj => obj.id === conn.to);
+      if (fromObj && toObj && fromObj.type === 'firewall' && toObj.type === 'firewall') {
+        warnings.push(`Соединение Фаервол-Фаервол: "${fromObj.name}" -> "${toObj.name}"`);
+      }
+    });
+
+    return { errors, warnings };
+  };
+
+  // Сохраняем состояние для undo
+  const pushUndo = useCallback(() => {
+    undoStackRef.current.push({
+      objects: JSON.parse(JSON.stringify(objects)),
+      connections: JSON.parse(JSON.stringify(connections)),
+      selectedObjectIds: [...selectedObjectIds],
+      objectCounters: { ...objectCounters }
+    });
+    redoStackRef.current = [];
+  }, [objects, connections, selectedObjectIds, objectCounters]);
+
+  // Undo
+  const handleUndo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return;
+    const last = undoStackRef.current.pop();
+    redoStackRef.current.push({
+      objects,
+      connections,
+      selectedObjectIds,
+      objectCounters
+    });
+    setObjects(last.objects);
+    setConnections(last.connections);
+    setSelectedObjectIds(last.selectedObjectIds);
+    setObjectCounters(last.objectCounters);
+  }, [objects, connections, selectedObjectIds, objectCounters]);
+
+  // Redo
+  const handleRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    const next = redoStackRef.current.pop();
+    undoStackRef.current.push({
+      objects,
+      connections,
+      selectedObjectIds,
+      objectCounters
+    });
+    setObjects(next.objects);
+    setConnections(next.connections);
+    setSelectedObjectIds(next.selectedObjectIds);
+    setObjectCounters(next.objectCounters);
+  }, [objects, connections, selectedObjectIds, objectCounters]);
+
+  // Копировать
+  const handleCopy = useCallback(() => {
+    if (selectedObjectIds.length === 0) return;
+    const copiedObjects = objects.filter(obj => selectedObjectIds.includes(obj.id));
+    clipboardRef.current = copiedObjects.map(obj => ({ ...obj }));
+  }, [objects, selectedObjectIds]);
+
+  // Вырезать
+  const handleCut = useCallback(() => {
+    if (selectedObjectIds.length === 0) return;
+    pushUndo();
+    const cutObjects = objects.filter(obj => selectedObjectIds.includes(obj.id));
+    clipboardRef.current = cutObjects.map(obj => ({ ...obj }));
+    setObjects(prev => prev.filter(obj => !selectedObjectIds.includes(obj.id)));
+    setConnections(prev => prev.filter(conn =>
+      !selectedObjectIds.includes(conn.from) && !selectedObjectIds.includes(conn.to)
+    ));
+    setSelectedObjectIds([]);
+  }, [objects, selectedObjectIds, pushUndo]);
+
+  // Вставить
+  const handlePaste = useCallback(() => {
+    if (!clipboardRef.current.length) return;
+    pushUndo();
+    const pasted = clipboardRef.current.map(obj => ({
+      ...obj,
+      id: 'obj_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+      x: obj.x + 30,
+      y: obj.y + 30
+    }));
+    setObjects(prev => [...prev, ...pasted]);
+    setSelectedObjectIds(pasted.map(obj => obj.id));
+  }, [pushUndo]);
 
   // Создание объекта
   const createObject = useCallback((type, x, y) => {
+    pushUndo();
     const id = 'obj_' + Date.now();
     const newObject = {
       id,
@@ -46,13 +287,35 @@ const NetworkDiagram = () => {
       x,
       y,
       name: OBJECT_TYPES[type].label,
-      number: objects.filter(obj => obj.type === type).length + 1
+      number: objectCounters[type] + 1,
+      properties: JSON.parse(JSON.stringify(OBJECT_TYPES[type].properties))
     };
     setObjects(prev => [...prev, newObject]);
-  }, [objects, OBJECT_TYPES]);
+    setObjectCounters(prev => ({ ...prev, [type]: prev[type] + 1 }));
+    setSelectedObjectIds([id]);
+    setSelectedObject(newObject);
+  }, [OBJECT_TYPES, objectCounters, pushUndo]);
 
   // Создание соединения
   const createConnection = useCallback((fromId, toId, type) => {
+    const fromObj = objects.find(obj => obj.id === fromId);
+    const toObj = objects.find(obj => obj.id === toId);
+    
+    if (!fromObj || !toObj) return false;
+
+    // Валидация соединения
+    const validation = validateConnection(fromObj.type, toObj.type);
+    if (!validation.isValid) {
+      addValidationMessage(validation.message, 'error');
+      return false;
+    }
+
+    // Показываем предупреждение если есть
+    if (validation.warning) {
+      addValidationMessage(validation.warning, 'warning');
+    }
+
+    pushUndo();
     const id = 'conn_' + Date.now();
     const newConnection = { id, from: fromId, to: toId, type };
     
@@ -63,38 +326,80 @@ const NetworkDiagram = () => {
     
     if (!exists) {
       setConnections(prev => [...prev, newConnection]);
+      
+      // Проверяем топологию после создания соединения
+      const topologyValidation = validateTopology();
+      topologyValidation.errors.forEach(error => addValidationMessage(error, 'error'));
+      topologyValidation.warnings.forEach(warning => addValidationMessage(warning, 'warning'));
+      
       return true;
     }
     return false;
-  }, [connections]);
+  }, [objects, connections, pushUndo, addValidationMessage]);
 
-  // Обработчики событий
+  // Обновление свойств объекта
+  const updateObjectProperty = (objectId, property, value) => {
+    setObjects(prev => prev.map(obj => 
+      obj.id === objectId 
+        ? { 
+            ...obj, 
+            properties: { 
+              ...obj.properties, 
+              [property]: { ...obj.properties[property], value } 
+            } 
+          }
+        : obj
+    ));
+    
+    // Обновляем selectedObject если он редактируется
+    if (selectedObject && selectedObject.id === objectId) {
+      setSelectedObject(prev => ({
+        ...prev,
+        properties: { 
+          ...prev.properties, 
+          [property]: { ...prev.properties[property], value } 
+        }
+      }));
+    }
+  };
+
+  // Обработчики событий (остаются без изменений, кроме небольших правок)
   const handleWorkspaceMouseDown = (e) => {
-    // Middle button (wheel) starts panning
     if (e.button === 1) {
-      // start panning
       isPanningRef.current = true;
       panStartRef.current = {
         startX: e.clientX,
         startY: e.clientY,
         origPan: { ...pan }
       };
-      // change cursor and prevent default browser autoscroll
       if (svgRef.current) svgRef.current.style.cursor = 'grabbing';
       e.preventDefault();
       return;
     }
 
-    // Left click on empty space clears selection
     if (e.button === 0 && !e.target.closest('.network-object')) {
-      setSelectedObjectIds([]);
+      const rect = svgRef.current.getBoundingClientRect();
+      const worldX = (e.clientX - rect.left - pan.x) / scale;
+      const worldY = (e.clientY - rect.top - pan.y) / scale;
+      
+      isSelectingRef.current = true;
+      selectionStartRef.current = { x: worldX, y: worldY };
+      setSelectionRect({ x1: worldX, y1: worldY, x2: worldX, y2: worldY });
+      
+      if (!e.shiftKey) {
+        setSelectedObjectIds([]);
+        setSelectedObject(null);
+      }
+      
+      e.preventDefault();
+      return;
     }
   };
 
   const handleObjectMouseDown = (e, object) => {
     e.stopPropagation();
     isDraggingRef.current = true;
-    // Конвертируем экранные координаты в мировые с учётом панорамирования и масштаба
+    
     const rect = svgRef.current.getBoundingClientRect();
     const worldX = (e.clientX - rect.left - pan.x) / scale;
     const worldY = (e.clientY - rect.top - pan.y) / scale;
@@ -105,34 +410,57 @@ const NetworkDiagram = () => {
       object
     };
 
-    // Если зажат Shift — не менять текущее выделение здесь (обработает onClick)
-    if (!e.shiftKey) {
-      if (!selectedObjectIds.includes(object.id)) {
-        setSelectedObjectIds([object.id]);
+    if (!selectedObjectIds.includes(object.id) && !e.shiftKey) {
+      setSelectedObjectIds([object.id]);
+      setSelectedObject(object);
+    } else if (e.shiftKey) {
+      setSelectedObjectIds(prev => 
+        prev.includes(object.id) 
+          ? prev.filter(id => id !== object.id)
+          : [...prev, object.id]
+      );
+      if (selectedObjectIds.length === 1 && selectedObjectIds[0] === object.id) {
+        setSelectedObject(null);
+      } else {
+        setSelectedObject(object);
       }
     }
   };
 
   const handleMouseMove = (e) => {
-    // Перемещение выбранного объекта
-    if (isDraggingRef.current && dragStartRef.current) {
-      const { object, offsetX, offsetY } = dragStartRef.current;
+    if (isDraggingRef.current && dragStartRef.current && selectedObjectIds.length > 0) {
+      const { offsetX, offsetY } = dragStartRef.current;
       const rect = svgRef.current.getBoundingClientRect();
       const worldX = (e.clientX - rect.left - pan.x) / scale;
       const worldY = (e.clientY - rect.top - pan.y) / scale;
 
-      const newX = worldX - offsetX;
-      const newY = worldY - offsetY;
+      const deltaX = worldX - offsetX - dragStartRef.current.object.x;
+      const deltaY = worldY - offsetY - dragStartRef.current.object.y;
 
       setObjects(prev => prev.map(obj => 
-        obj.id === object.id 
-          ? { ...obj, x: newX, y: newY }
+        selectedObjectIds.includes(obj.id)
+          ? { ...obj, x: obj.x + deltaX, y: obj.y + deltaY }
           : obj
       ));
+      
+      dragStartRef.current.object.x += deltaX;
+      dragStartRef.current.object.y += deltaY;
       return;
     }
 
-    // Параллельно: панорамирование по средней кнопке
+    if (isSelectingRef.current) {
+      const rect = svgRef.current.getBoundingClientRect();
+      const worldX = (e.clientX - rect.left - pan.x) / scale;
+      const worldY = (e.clientY - rect.top - pan.y) / scale;
+      setSelectionRect(prev => ({ 
+        x1: selectionStartRef.current.x, 
+        y1: selectionStartRef.current.y, 
+        x2: worldX, 
+        y2: worldY 
+      }));
+      return;
+    }
+
     if (isPanningRef.current) {
       const dx = e.clientX - panStartRef.current.startX;
       const dy = e.clientY - panStartRef.current.startY;
@@ -145,16 +473,58 @@ const NetworkDiagram = () => {
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e) => {
+    if (isSelectingRef.current && selectionRect) {
+      const { x1, y1, x2, y2 } = selectionRect;
+      
+      if (Math.abs(x2 - x1) > 5 && Math.abs(y2 - y1) > 5) {
+        const minX = Math.min(x1, x2);
+        const maxX = Math.max(x1, x2);
+        const minY = Math.min(y1, y2);
+        const maxY = Math.max(y1, y2);
+        
+        const selected = objects.filter(obj => {
+          const objCenterX = obj.x + 40;
+          const objCenterY = obj.y + 40;
+          return objCenterX >= minX && objCenterX <= maxX && 
+                 objCenterY >= minY && objCenterY <= maxY;
+        }).map(obj => obj.id);
+
+        if (e.shiftKey) {
+          setSelectedObjectIds(prev => {
+            const newSelection = [...prev];
+            selected.forEach(id => {
+              if (!newSelection.includes(id)) {
+                newSelection.push(id);
+              }
+            });
+            return newSelection;
+          });
+        } else {
+          setSelectedObjectIds(selected);
+        }
+        
+        if (selected.length === 1) {
+          setSelectedObject(objects.find(obj => obj.id === selected[0]));
+        } else {
+          setSelectedObject(null);
+        }
+      }
+      
+      setSelectionRect(null);
+      isSelectingRef.current = false;
+    }
+    
     isDraggingRef.current = false;
     dragStartRef.current = null;
+    
     if (isPanningRef.current) {
       isPanningRef.current = false;
       if (svgRef.current) svgRef.current.style.cursor = '';
     }
   };
 
-  // Преобразование экранных координат в мировые (с учётом пана и масштаба)
+  // Преобразование экранных координат в мировые
   const screenToWorld = (clientX, clientY) => {
     const rect = svgRef.current.getBoundingClientRect();
     return {
@@ -163,7 +533,7 @@ const NetworkDiagram = () => {
     };
   };
 
-  // Обработка колеса мыши: Ctrl+wheel = зум, иначе панорамирование
+  // Обработка колеса мыши
   const handleWheel = (e) => {
     if (!svgRef.current) return;
     e.preventDefault();
@@ -171,12 +541,12 @@ const NetworkDiagram = () => {
     const rect = svgRef.current.getBoundingClientRect();
 
     if (e.ctrlKey) {
-      // Zoom относительно положения курсора
       const worldBefore = {
         x: (e.clientX - rect.left - pan.x) / scale,
         y: (e.clientY - rect.top - pan.y) / scale
       };
-      const zoomFactor = Math.exp(-e.deltaY * 0.0015); // плавный экспоненциальный зум
+      
+      const zoomFactor = Math.exp(-e.deltaY * 0.0015);
       const newScale = Math.max(0.2, Math.min(3, scale * zoomFactor));
 
       const newPanX = (e.clientX - rect.left) - worldBefore.x * newScale;
@@ -185,7 +555,6 @@ const NetworkDiagram = () => {
       setScale(newScale);
       setPan({ x: newPanX, y: newPanY });
     } else {
-      // Панорамирование: колесо — вертикальная прокрутка, Shift+wheel — горизонтальная
       if (e.shiftKey) {
         setPan(prev => ({ x: prev.x - e.deltaY, y: prev.y }));
       } else {
@@ -216,7 +585,7 @@ const NetworkDiagram = () => {
 
   const startConnection = (object) => {
     if (!selectedCableType) {
-      alert('Сначала выберите тип подключения!');
+      addValidationMessage('Сначала выберите тип подключения!', 'error');
       return;
     }
     isConnectingRef.current = true;
@@ -241,23 +610,12 @@ const NetworkDiagram = () => {
       finishConnection(object);
       return;
     }
-    
-    if (e.shiftKey) {
-      setSelectedObjectIds(prev => 
-        prev.includes(object.id) 
-          ? prev.filter(id => id !== object.id)
-          : [...prev, object.id]
-      );
-    } else {
-      setSelectedObjectIds([object.id]);
-    }
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     const type = e.dataTransfer.getData('text/plain');
     const rect = svgRef.current.getBoundingClientRect();
-    // Преобразуем в мировые координаты с учётом пана и зума
     const worldX = (e.clientX - rect.left - pan.x) / scale;
     const worldY = (e.clientY - rect.top - pan.y) / scale;
     const x = worldX - 40;
@@ -273,26 +631,38 @@ const NetworkDiagram = () => {
     if (selectedObjectIds.length === 0) return;
     
     if (window.confirm(`Удалить ${selectedObjectIds.length} объектов?`)) {
+      pushUndo();
       setObjects(prev => prev.filter(obj => !selectedObjectIds.includes(obj.id)));
       setConnections(prev => prev.filter(conn => 
         !selectedObjectIds.includes(conn.from) && !selectedObjectIds.includes(conn.to)
       ));
       setSelectedObjectIds([]);
+      setSelectedObject(null);
     }
   };
 
   const clearWorkspace = () => {
     if (window.confirm('Очистить всё поле?')) {
+      pushUndo();
       setObjects([]);
       setConnections([]);
       setSelectedObjectIds([]);
+      setSelectedObject(null);
       setObjectCounters({
         server: 0, firewall: 0, loadbalancer: 0, service: 0, container: 0, network: 0
       });
+      setValidationMessages([]);
     }
   };
 
   const exportToJSON = () => {
+    const topologyValidation = validateTopology();
+    if (topologyValidation.errors.length > 0) {
+      if (!window.confirm(`Обнаружены ошибки в топологии: ${topologyValidation.errors.join(', ')}. Продолжить экспорт?`)) {
+        return;
+      }
+    }
+
     const data = {
       objects: objects,
       connections: connections,
@@ -316,11 +686,21 @@ const NetworkDiagram = () => {
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target.result);
+        pushUndo();
         setObjects(data.objects || []);
         setConnections(data.connections || []);
         setObjectCounters(data.objectCounters || {
           server: 0, firewall: 0, loadbalancer: 0, service: 0, container: 0, network: 0
         });
+        setSelectedObjectIds([]);
+        setSelectedObject(null);
+        setValidationMessages([]);
+        
+        // Проверяем топологию после импорта
+        const topologyValidation = validateTopology();
+        topologyValidation.errors.forEach(error => addValidationMessage(error, 'error'));
+        topologyValidation.warnings.forEach(warning => addValidationMessage(warning, 'warning'));
+        
         alert('Схема загружена!');
       } catch (error) {
         alert('Ошибка при загрузке файла');
@@ -358,7 +738,8 @@ const NetworkDiagram = () => {
   // Рендер объекта
   const renderObject = (object) => {
     const isSelected = selectedObjectIds.includes(object.id);
-    
+    const isEditing = editingId === object.id;
+
     return (
       <g
         key={object.id}
@@ -385,16 +766,47 @@ const NetworkDiagram = () => {
         >
           {OBJECT_TYPES[object.type].icon}
         </text>
-        <text
-          x="40"
-          y="60"
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize="10"
-          fontWeight="500"
-        >
-          {object.name} №{object.number}
-        </text>
+        {isEditing ? (
+          <foreignObject x="10" y="50" width="60" height="24">
+            <input
+              type="text"
+              value={editingValue}
+              autoFocus
+              style={{ width: '100%', fontSize: '12px', textAlign: 'center', borderRadius: 4, border: '1px solid #007bff', padding: '2px' }}
+              onChange={e => setEditingValue(e.target.value)}
+              onBlur={() => {
+                setObjects(prev => prev.map(obj => obj.id === object.id ? { ...obj, name: editingValue } : obj));
+                setEditingId(null);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  setObjects(prev => prev.map(obj => obj.id === object.id ? { ...obj, name: editingValue } : obj));
+                  setEditingId(null);
+                }
+                if (e.key === 'Escape') {
+                  setEditingId(null);
+                }
+              }}
+            />
+          </foreignObject>
+        ) : (
+          <text
+            x="40"
+            y="60"
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize="10"
+            fontWeight="500"
+            style={{ cursor: 'pointer', userSelect: 'none' }}
+            onClick={e => {
+              e.stopPropagation();
+              setEditingId(object.id);
+              setEditingValue(object.name);
+            }}
+          >
+            {object.name} №{object.number}
+          </text>
+        )}
         <circle
           cx="40"
           cy="40"
@@ -402,7 +814,7 @@ const NetworkDiagram = () => {
           fill="#20c997"
           stroke="white"
           strokeWidth="2"
-          style={{ opacity: 0 }}
+          style={{ opacity: isSelected ? 1 : 0 }}
           className="connection-point"
           onMouseDown={(e) => {
             e.stopPropagation();
@@ -413,38 +825,153 @@ const NetworkDiagram = () => {
     );
   };
 
+  // Рендер свойств объекта с двумя колонками
+  const renderObjectProperties = () => {
+    if (!selectedObject) return null;
+
+    const properties = selectedObject.properties || {};
+    
+    return (
+      <div className="properties-panel">
+        <h4>Свойства {OBJECT_TYPES[selectedObject.type].label}</h4>
+        <div className="properties-grid">
+          {Object.entries(properties).map(([key, propConfig]) => (
+            <React.Fragment key={key}>
+              <div className="property-label">{propConfig.label}:</div>
+              <div className="property-value">
+                {propConfig.editable ? (
+                  <input
+                    type="text"
+                    value={propConfig.value}
+                    onChange={(e) => updateObjectProperty(selectedObject.id, key, e.target.value)}
+                    placeholder={`Введите ${propConfig.label}`}
+                  />
+                ) : (
+                  <span>{propConfig.value}</span>
+                )}
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Рендер сообщений валидации
+  const renderValidationMessages = () => {
+    if (validationMessages.length === 0) return null;
+
+    return (
+      <div className="validation-messages">
+        <div className="validation-header">
+          <h4>Сообщения системы</h4>
+          <button 
+            className="close-all-btn"
+            onClick={() => setValidationMessages([])}
+          >
+            Закрыть все
+          </button>
+        </div>
+        {validationMessages.map(msg => (
+          <div 
+            key={msg.id} 
+            className={`validation-message ${msg.type}`}
+          >
+            <div className="message-content">
+              {msg.type === 'error' ? '❌' : '⚠️'} {msg.message}
+            </div>
+            <button 
+              className="close-btn"
+              onClick={() => removeValidationMessage(msg.id)}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   // Эффекты
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Delete') {
-        deleteSelectedObjects();
+      shiftPressedRef.current = e.shiftKey;
+      
+      const ctrl = e.ctrlKey || e.metaKey;
+      switch (e.code) {
+        case 'Delete':
+          deleteSelectedObjects();
+          break;
+        case 'KeyC':
+          if (ctrl) {
+            e.preventDefault();
+            handleCopy();
+          }
+          break;
+        case 'KeyX':
+          if (ctrl) {
+            e.preventDefault();
+            handleCut();
+          }
+          break;
+        case 'KeyV':
+          if (ctrl) {
+            e.preventDefault();
+            handlePaste();
+          }
+          break;
+        case 'KeyZ':
+          if (ctrl) {
+            e.preventDefault();
+            if (e.shiftKey) {
+              handleRedo();
+            } else {
+              handleUndo();
+            }
+          }
+          break;
+        case 'KeyY':
+          if (ctrl) {
+            e.preventDefault();
+            handleRedo();
+          }
+          break;
+        case 'KeyA':
+          if (ctrl) {
+            e.preventDefault();
+            setSelectedObjectIds(objects.map(obj => obj.id));
+          }
+          break;
+        default:
+          break;
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      if (e.key === 'Shift') {
+        shiftPressedRef.current = false;
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keyup', handleKeyUp);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [selectedObjectIds]);
+  }, [selectedObjectIds, handleCopy, handleCut, handlePaste, handleUndo, handleRedo, objects, deleteSelectedObjects]);
 
-  // Устанавливаем нативный wheel-listener с passive: false на SVG, чтобы
-  // при Ctrl+wheel предотвратить масштаб страницы и позволить масштабировать только доску
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
 
     const nativeWheelHandler = (e) => {
-      // Если зажат Ctrl — отменяем дефолтное поведение (масштаб страницы)
-      if (e.ctrlKey) {
-        e.preventDefault();
-      }
-      // также можно предотвратить при MetaKey на macOS
-      if (e.metaKey) {
+      if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
       }
     };
@@ -458,6 +985,9 @@ const NetworkDiagram = () => {
 
   return (
     <div className="container">
+      {/* Валидационные сообщения */}
+      {renderValidationMessages()}
+
       {/* Панель доступных объектов */}
       <div className="objects-panel">
         <h3>Доступные объекты</h3>
@@ -529,6 +1059,19 @@ const NetworkDiagram = () => {
           <rect width="100%" height="100%" fill="url(#grid)" />
           
           <g transform={`translate(${pan.x}, ${pan.y}) scale(${scale})`}>
+            {selectionRect && (
+              <rect
+                className="selection-rect"
+                x={Math.min(selectionRect.x1, selectionRect.x2)}
+                y={Math.min(selectionRect.y1, selectionRect.y2)}
+                width={Math.abs(selectionRect.x2 - selectionRect.x1)}
+                height={Math.abs(selectionRect.y2 - selectionRect.y1)}
+                fill="rgba(0,123,255,0.1)"
+                stroke="#007bff"
+                strokeDasharray="4"
+                strokeWidth="2"
+              />
+            )}
             {connections.map(renderConnection)}
             {objects.map(renderObject)}
           </g>
@@ -541,33 +1084,49 @@ const NetworkDiagram = () => {
         </div>
       </div>
 
-      {/* Панель размещенных объектов */}
+      {/* Панель размещенных объектов и свойств */}
       <div className="placed-objects">
-        <h3>Размещенные объекты ({objects.length})</h3>
-        <div>
-          {objects.map(obj => (
-            <div key={obj.id} className="placed-object-item">
-              <span className="icon">{OBJECT_TYPES[obj.type].icon}</span>
-              <span>{obj.name} №{obj.number}</span>
-            </div>
-          ))}
-        </div>
-        
-        <h3 style={{ marginTop: '20px' }}>Соединения ({connections.length})</h3>
-        <div>
-          {connections.map(conn => {
-            const fromObj = objects.find(obj => obj.id === conn.from);
-            const toObj = objects.find(obj => obj.id === conn.to);
-            return fromObj && toObj ? (
-              <div key={conn.id} className="connection-item">
-                <div className="cable-icon" style={{ background: CABLE_TYPES[conn.type].color }}>
-                  {CABLE_TYPES[conn.type].icon}
+        {selectedObject ? (
+          <>
+            <h3>Свойства: {selectedObject.name}</h3>
+            {renderObjectProperties()}
+          </>
+        ) : (
+          <>
+            <h3>Размещенные объекты ({objects.length})</h3>
+            <div>
+              {objects.map(obj => (
+                <div 
+                  key={obj.id} 
+                  className={`placed-object-item ${selectedObjectIds.includes(obj.id) ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSelectedObjectIds([obj.id]);
+                    setSelectedObject(obj);
+                  }}
+                >
+                  <span className="icon">{OBJECT_TYPES[obj.type].icon}</span>
+                  <span>{obj.name} №{obj.number}</span>
                 </div>
-                <span>{fromObj.name} → {toObj.name}</span>
-              </div>
-            ) : null;
-          })}
-        </div>
+              ))}
+            </div>
+            
+            <h3 style={{ marginTop: '20px' }}>Соединения ({connections.length})</h3>
+            <div>
+              {connections.map(conn => {
+                const fromObj = objects.find(obj => obj.id === conn.from);
+                const toObj = objects.find(obj => obj.id === conn.to);
+                return fromObj && toObj ? (
+                  <div key={conn.id} className="connection-item">
+                    <div className="cable-icon" style={{ background: CABLE_TYPES[conn.type].color }}>
+                      {CABLE_TYPES[conn.type].icon}
+                    </div>
+                    <span>{fromObj.name} → {toObj.name}</span>
+                  </div>
+                ) : null;
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Панель управления */}
@@ -589,9 +1148,13 @@ const NetworkDiagram = () => {
         >
           📁 Импорт из JSON
         </button>
+        <button className="control-btn" onClick={deleteSelectedObjects}>
+          🗑️ Удалить выбранное
+        </button>
         <button className="control-btn clear" onClick={clearWorkspace}>
           🗑️ Очистить поле
         </button>
+        
         <div className="current-cable">
           <span>Текущее подключение: {CABLE_TYPES[selectedCableType]?.label}</span>
         </div>
@@ -600,4 +1163,4 @@ const NetworkDiagram = () => {
   );
 };
 
-export default NetworkDiagram;  
+export default NetworkDiagram;
