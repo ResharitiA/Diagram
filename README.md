@@ -9,5 +9,6 @@
 docker build -t diagram-app .
 
 docker run -p 3000:3000 diagram-app
+
 И все ЗАРАБОТАЕТ!)
 =======
